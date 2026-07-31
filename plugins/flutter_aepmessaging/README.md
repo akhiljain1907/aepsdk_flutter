@@ -86,6 +86,63 @@ static Future<void> refreshInAppMessages
 await Messaging.refreshInAppMessages();
 ```
 
+## Content Cards
+
+Content Cards are fetched by surface and rendered by your own Flutter widgets. Fetch
+data with the APIs below and report interactions with the `track` methods.
+
+> Note: `updatePropositionsForSurfaces` makes a network call; `getPropositionsForSurfaces`
+> reads the SDK cache only. Content-card propositions are held in memory and are not
+> available after an app restart until fetched again. On iOS this requires
+> `AEPMessaging >= 5.14.0`.
+
+### updatePropositionsForSurfaces
+
+Fetches propositions for the given surfaces over the Edge network and caches them.
+
+```dart
+static void updatePropositionsForSurfaces(List<Surface> surfaces)
+```
+
+```dart
+Messaging.updatePropositionsForSurfaces([Surface('homepage/banner')]);
+```
+
+### getPropositionsForSurfaces
+
+Reads the cached propositions for the given surfaces (no network call). Returns a map
+keyed by surface URI to the list of `Proposition`s.
+
+```dart
+static Future<Map<String, List<Proposition>>> getPropositionsForSurfaces(List<Surface> surfaces)
+```
+
+```dart
+final result = await Messaging.getPropositionsForSurfaces([Surface('homepage/banner')]);
+for (final propositions in result.values) {
+  for (final proposition in propositions) {
+    for (final item in proposition.items) {
+      final card = item.contentCardSchemaData;
+      if (card != null) {
+        // render card.content in a Flutter widget, then track display:
+        await item.track(null, MessagingEdgeEventType.DISPLAY);
+      }
+    }
+  }
+}
+```
+
+### Tracking content card interactions
+
+```dart
+// via the proposition item
+await item.track('clicked', MessagingEdgeEventType.INTERACT);
+// or via the content card schema data
+await item.contentCardSchemaData?.track(null, MessagingEdgeEventType.DISMISS);
+// generate XDM without dispatching
+final xdm = await item.generateInteractionXdm('clicked', MessagingEdgeEventType.INTERACT);
+```
+
 ## Handling In App Messages using Message Object
 
 > Note: In order to use the methods defined in the Message class, use `getCachedMessages` to retrieve the messages that have been cached in-memory, and then use the Message objects returned.

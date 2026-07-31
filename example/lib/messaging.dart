@@ -58,6 +58,11 @@ class _MyAppState extends State<MessagingPage> {
   List<Message> _cachedMessages = [];
   final TextEditingController inputController = TextEditingController();
 
+  // --- Content Cards ---
+  final Surface _cardSurface = Surface('content-card-home');
+  List<Proposition> _contentCards = [];
+  String _contentCardResult = '';
+
   @override
   void initState() {
     super.initState();
@@ -130,6 +135,59 @@ class _MyAppState extends State<MessagingPage> {
     }
   }
 
+  // --- Content Cards ---
+
+  Future<void> updateContentCards() async {
+    // Network fetch for the surface; results are cached in the SDK.
+    Messaging.updatePropositionsForSurfaces([_cardSurface]);
+    if (!mounted) return;
+    setState(() => _contentCardResult =
+        'updatePropositionsForSurfaces called for "${_cardSurface.path}"\nNow tap "getPropositionsForSurfaces".');
+  }
+
+  Future<void> getContentCards() async {
+    final result = await Messaging.getPropositionsForSurfaces([_cardSurface]);
+    final props = result.values.expand((p) => p).toList();
+    if (!mounted) return;
+    setState(() {
+      _contentCards = props;
+      _contentCardResult =
+          'Got ${result.length} surface(s), ${props.length} proposition(s):\n' +
+              props.map((p) {
+                final card = p.items.isNotEmpty
+                    ? p.items.first.contentCardSchemaData
+                    : null;
+                return '  ${p.id}: ${card?.content ?? '(no content-card data)'}';
+              }).join('\n');
+    });
+  }
+
+  Future<void> trackContentCardDisplay() async {
+    final items = _contentCards.expand((p) => p.items).toList();
+    if (items.isEmpty) {
+      setState(() => _contentCardResult =
+          'No content cards — update then get propositions first');
+      return;
+    }
+    await items.first.track(null, MessagingEdgeEventType.DISPLAY);
+    if (!mounted) return;
+    setState(() =>
+        _contentCardResult = 'Tracked DISPLAY for "${items.first.itemId}"');
+  }
+
+  Future<void> trackContentCardInteract() async {
+    final items = _contentCards.expand((p) => p.items).toList();
+    if (items.isEmpty) {
+      setState(() => _contentCardResult =
+          'No content cards — update then get propositions first');
+      return;
+    }
+    await items.first.track('clicked', MessagingEdgeEventType.INTERACT);
+    if (!mounted) return;
+    setState(() =>
+        _contentCardResult = 'Tracked INTERACT for "${items.first.itemId}"');
+  }
+
   @override
   Widget build(BuildContext context) {
     Messaging.setMessagingDelegate(CustomMessagingDelegate());
@@ -183,6 +241,25 @@ class _MyAppState extends State<MessagingPage> {
           ElevatedButton(
             child: Text("clearMessage"),
             onPressed: () => clearMessage(),
+          ),
+          Divider(thickness: 2, height: 32),
+          Text("Content Cards (surface: ${_cardSurface.path}):"),
+          getRichText('Content card result: ', '$_contentCardResult\n'),
+          ElevatedButton(
+            child: Text("updatePropositionsForSurfaces"),
+            onPressed: () => updateContentCards(),
+          ),
+          ElevatedButton(
+            child: Text("getPropositionsForSurfaces"),
+            onPressed: () => getContentCards(),
+          ),
+          ElevatedButton(
+            child: Text("track content card DISPLAY"),
+            onPressed: () => trackContentCardDisplay(),
+          ),
+          ElevatedButton(
+            child: Text("track content card INTERACT"),
+            onPressed: () => trackContentCardInteract(),
           ),
         ]),
       ),

@@ -11,6 +11,10 @@ public class SwiftFlutterAEPMessagingPlugin: NSObject, FlutterPlugin, MessagingD
     private let channel: FlutterMethodChannel
     private let dataBridge: SwiftFlutterAEPMessagingDataBridge
     private var messageCache = [String: Message]()
+    // Retain fetched propositions so their items' (weak) proposition back-reference
+    // stays valid for tracking, and index items by id for tracking lookups.
+    private var propositionCache = [Proposition]()
+    private var propositionItemCache = [String: PropositionItem]()
 
     init(channel: FlutterMethodChannel) {
         self.channel = channel
@@ -37,6 +41,15 @@ public class SwiftFlutterAEPMessagingPlugin: NSObject, FlutterPlugin, MessagingD
         case "refreshInAppMessages":
             Messaging.refreshInAppMessages()
             return result(nil)
+        // Content Card / Surfaces Methods
+        case "updatePropositionsForSurfaces":
+            return result(updatePropositionsForSurfaces(arguments: call.arguments))
+        case "getPropositionsForSurfaces":
+            return getPropositionsForSurfaces(arguments: call.arguments, result: result)
+        case "trackPropositionInteraction":
+            return result(trackPropositionInteraction(arguments: call.arguments))
+        case "generatePropositionInteractionXdm":
+            return result(generatePropositionInteractionXdm(arguments: call.arguments))
         // Message Methods
         case "clearMessage":
             return result(clearMessage(arguments: call.arguments))
@@ -58,6 +71,95 @@ public class SwiftFlutterAEPMessagingPlugin: NSObject, FlutterPlugin, MessagingD
             dataBridge.transformToFlutterMessage(message: $0)
         }
         return cachedMessages
+    }
+
+    // Content Card / Surfaces Methods
+    private func surfaces(from arguments: Any?) -> [Surface] {
+        guard let args = arguments as? [String: Any],
+            let list = args["surfaces"] as? [[String: Any]]
+        else { return [] }
+        return list.compactMap { item in
+            if let path = item["path"] as? String, !path.isEmpty {
+                return Surface(path: path)
+            }
+            return nil
+        }
+    }
+
+    private func updatePropositionsForSurfaces(arguments: Any?) -> FlutterError? {
+        Messaging.updatePropositionsForSurfaces(surfaces(from: arguments))
+        return nil
+    }
+
+    private func getPropositionsForSurfaces(
+        arguments: Any?, result: @escaping FlutterResult
+    ) {
+        Messaging.getPropositionsForSurfaces(surfaces(from: arguments)) {
+            [weak self] propositionsDict, error in
+            guard let self = self else { return }
+            if let error = error {
+                DispatchQueue.main.async {
+                    result(
+                        FlutterError(
+                            code: "GET_PROPOSITIONS_ERROR",
+                            message: error.localizedDescription,
+                            details: nil
+                        )
+                    )
+                }
+                return
+            }
+            var encoded = [String: Any]()
+            propositionsDict?.forEach { surface, propositions in
+                encoded[surface.uri] = propositions.map { proposition -> [String: Any] in
+                    // Retain the proposition and set each item's back-reference so
+                    // tracking calls remain valid; index items by id for lookup.
+                    self.propositionCache.append(proposition)
+                    proposition.items.forEach {
+                        self.propositionItemCache[$0.itemId] = $0
+                    }
+                    return self.dataBridge.transformToFlutterProposition(
+                        proposition: proposition
+                    )
+                }
+            }
+            DispatchQueue.main.async { result(encoded) }
+        }
+    }
+
+    private func trackPropositionInteraction(arguments: Any?) -> FlutterError? {
+        guard let args = arguments as? [String: Any],
+            let itemId = args["itemId"] as? String,
+            let eventTypeInt = args["eventType"] as? Int
+        else {
+            return FlutterError(
+                code: "BAD ARGUMENTS",
+                message: "itemId and eventType are required",
+                details: nil
+            )
+        }
+        let interaction = args["interaction"] as? String
+        let tokens = args["tokens"] as? [String]
+        let eventType =
+            MessagingEdgeEventType(rawValue: eventTypeInt) ?? .dismiss
+        propositionItemCache[itemId]?.track(
+            interaction, withEdgeEventType: eventType, forTokens: tokens
+        )
+        return nil
+    }
+
+    private func generatePropositionInteractionXdm(arguments: Any?) -> [String: Any]? {
+        guard let args = arguments as? [String: Any],
+            let itemId = args["itemId"] as? String,
+            let eventTypeInt = args["eventType"] as? Int
+        else { return nil }
+        let interaction = args["interaction"] as? String
+        let tokens = args["tokens"] as? [String]
+        let eventType =
+            MessagingEdgeEventType(rawValue: eventTypeInt) ?? .dismiss
+        return propositionItemCache[itemId]?.generateInteractionXdm(
+            interaction, withEdgeEventType: eventType, forTokens: tokens
+        )
     }
 
     // Message Class Methods

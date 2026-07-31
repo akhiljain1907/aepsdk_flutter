@@ -12,10 +12,16 @@ import 'dart:io' show Platform;
 import 'package:flutter/services.dart';
 import 'package:flutter_aepmessaging/src/aepmessaging_message.dart';
 import 'package:flutter_aepmessaging/src/aepmessaging_messaging_delegate.dart';
+import 'package:flutter_aepmessaging/src/aepmessaging_surface.dart';
+import 'package:flutter_aepmessaging/src/aepmessaging_proposition.dart';
 export 'package:flutter_aepmessaging/src/aepmessaging_message.dart';
 export 'package:flutter_aepmessaging/src/aepmessaging_messaging_edge_event_type.dart';
 export 'package:flutter_aepmessaging/src/aepmessaging_messaging_delegate.dart';
 export 'package:flutter_aepmessaging/src/aepmessaging_showable.dart';
+export 'package:flutter_aepmessaging/src/aepmessaging_surface.dart';
+export 'package:flutter_aepmessaging/src/aepmessaging_proposition.dart';
+export 'package:flutter_aepmessaging/src/aepmessaging_proposition_item.dart';
+export 'package:flutter_aepmessaging/src/aepmessaging_content_card_schema_data.dart';
 
 /// Adobe Experience Platform Messaging
 class Messaging {
@@ -69,6 +75,41 @@ class Messaging {
   /// Initiates a network call to retrieve remote In-App Message definitions.
   static void refreshInAppMessages() =>
       _channel.invokeMethod('refreshInAppMessages');
+
+  /// Fetches propositions (e.g. Content Cards) for the given [surfaces] from
+  /// Adobe Journey Optimizer over the Experience Edge network and caches them
+  /// in the SDK. This is an asynchronous network call every time it is invoked;
+  /// throttle it on the app side (e.g. once per launch/foreground).
+  ///
+  /// Use [getPropositionsForSurfaces] afterwards to read the cached results.
+  static void updatePropositionsForSurfaces(List<Surface> surfaces) =>
+      _channel.invokeMethod('updatePropositionsForSurfaces',
+          {'surfaces': surfaces.map((s) => s.toMap()).toList()});
+
+  /// Retrieves the previously fetched (cached) propositions for the given
+  /// [surfaces]. This is a cache-only read — it does not make a network call.
+  /// Surfaces that were never fetched via [updatePropositionsForSurfaces] are
+  /// absent from the result.
+  ///
+  /// Note: Content Card propositions are held in memory only and are not
+  /// available after an app restart until fetched again.
+  ///
+  /// Returns a map keyed by surface URI to the list of [Proposition]s for it.
+  static Future<Map<String, List<Proposition>>> getPropositionsForSurfaces(
+    List<Surface> surfaces,
+  ) {
+    return _channel.invokeMapMethod<String, dynamic>(
+        'getPropositionsForSurfaces',
+        {'surfaces': surfaces.map((s) => s.toMap()).toList()}).then((result) {
+      final decoded = <String, List<Proposition>>{};
+      (result ?? {}).forEach((uri, propositions) {
+        decoded[uri] = (propositions as List<dynamic>)
+            .map((p) => Proposition.fromMap(Map<dynamic, dynamic>.from(p as Map)))
+            .toList();
+      });
+      return decoded;
+    });
+  }
 
   static void setMessagingDelegate(MessagingDelegate? delegate) {
     _delegate = delegate;

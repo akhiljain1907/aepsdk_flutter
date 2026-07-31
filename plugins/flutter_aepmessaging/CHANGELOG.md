@@ -1,3 +1,6 @@
+## 5.2.0
+* Added Content Card support (data + tracking): `Messaging.updatePropositionsForSurfaces` and `Messaging.getPropositionsForSurfaces`, plus `Surface`, `Proposition`, `PropositionItem`, and `ContentCardSchemaData` models with `track` / `generateInteractionXdm`. Requires `AEPMessaging >= 5.14.0` on iOS (public content-card tracking APIs).
+
 ## 5.1.0
 * Fixed Android `refreshInAppMessages` returning `Unit` instead of `null` over the method channel, causing a type mismatch on the Flutter side.
 
